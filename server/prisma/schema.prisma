@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+model Restaurant {
+  id         Int        @id @default(autoincrement())
+  name       String
+  slug       String     @unique
+  tables     Table[]
+  categories Category[]
+  orders     Order[]
+  createdAt  DateTime   @default(now())
+}
+model Table {
+  id           Int        @id @default(autoincrement())
+  number       Int
+  restaurantId Int
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  orders       Order[]
+  @@unique([restaurantId, number])
+}
+model Category {
+  id           Int        @id @default(autoincrement())
+  name         String
+  sortOrder    Int        @default(0)
+  restaurantId Int
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  items        MenuItem[]
+}
+model MenuItem {
+  id          Int         @id @default(autoincrement())
+  name        String
+  description String?
+  price       Int         // KES, whole shillings
+  imageUrl    String?
+  available   Boolean     @default(true)
+  categoryId  Int
+  category    Category    @relation(fields: [categoryId], references: [id])
+  orderItems  OrderItem[]
+}
+model Order {
+  id            Int         @id @default(autoincrement())
+  restaurantId  Int
+  restaurant    Restaurant  @relation(fields: [restaurantId], references: [id])
+  tableId       Int
+  table         Table       @relation(fields: [tableId], references: [id])
+  status        String      @default("PENDING_PAYMENT") // PENDING_PAYMENT, PAID, PREPARING, READY, SERVED, CANCELLED
+  total         Int
+  customerPhone String?
+  publicToken   String?     @unique
+  items         OrderItem[]
+  payments      Payment[]
+  createdAt     DateTime    @default(now())
+}
+model OrderItem {
+  id         Int      @id @default(autoincrement())
+  orderId    Int
+  order      Order    @relation(fields: [orderId], references: [id])
+  menuItemId Int
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  name       String   // snapshot at order time
+  price      Int      // snapshot at order time
+  quantity   Int
+}
+model Payment {
+  id                Int      @id @default(autoincrement())
+  orderId           Int
+  order             Order    @relation(fields: [orderId], references: [id])
+  method            String   @default("MPESA")
+  status            String   @default("PENDING") // PENDING, SUCCESS, FAILED
+  phone             String
+  amount            Int
+  checkoutRequestId String?  @unique
+  mpesaReceipt      String?
+  createdAt         DateTime @default(now())
+}

@@ -1,0 +1,111 @@
+import { useCallback, useEffect, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+const COLUMNS = [
+  { status: "PAID", title: "New", next: "PREPARING", label: "Start preparing" },
+  { status: "PREPARING", title: "Preparing", next: "READY", label: "Mark ready" },
+  { status: "READY", title: "Ready to serve", next: "SERVED", label: "Mark served" },
+];
+export default function StaffPage() {
+  const { slug } = useParams();
+  const [key, setKey] = useState(() => {
+    try { return sessionStorage.getItem("staffKey") || ""; } catch { return ""; }
+  });
+  const [input, setInput] = useState("");
+  const [orders, setOrders] = useState([]);
+  const [error, setError] = useState("");
+  const load = useCallback(async () => {
+    if (!key) return;
+    try {
+      const r = await fetch(`/api/staff/${slug}/orders`, { headers: { "x-staff-key": key } });
+      if (r.status === 401) {
+        try { sessionStorage.removeItem("staffKey"); } catch { /* ignore */ }
+        setKey("");
+        setError("Wrong staff key");
+        return;
+      }
+      if (!r.ok) throw new Error("Could not load orders");
+      setOrders(await r.json());
+      setError("");
+    } catch (e) {
+      setError(e.message);
+    }
+  }, [key, slug]);
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, [load]);
+  const advance = async (order, next) => {
+    try {
+      const r = await fetch(`/api/staff/orders/${order.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-staff-key": key },
+        body: JSON.stringify({ status: next }),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        setError(d.error || "Could not update order");
+      }
+    } finally {
+      load();
+    }
+  };
+  const login = (e) => {
+    e.preventDefault();
+    const k = input.trim();
+    if (!k) return;
+    try { sessionStorage.setItem("staffKey", k); } catch { /* ignore */ }
+    setKey(k);
+    setInput("");
+    setError("");
+  };
+  if (!key) {
+    return (
+      <div className="page">
+        <h1>Staff login</h1>
+        <form onSubmit={login}>
+          <label htmlFor="skey">Staff key</label>
+          <input id="skey" type="password" value={input} onChange={(e) => setInput(e.target.value)} />
+          {error && <p className="error">{error}</p>}
+          <button className="primary" type="submit">Open dashboard</button>
+        </form>
+      </div>
+    );
+  }
+  return (
+    <div className="board-wrap">
+      <header className="header">
+        <h1>Orders - {slug}</h1>
+        <span className="hint">
+          <Link to={`/staff/${slug}/qr`}>Table QR codes</Link> - Refreshes every 5s
+        </span>
+      </header>
+      {error && <p className="error">{error}</p>}
+      <div className="board">
+        {COLUMNS.map((col) => {
+          const list = orders.filter((o) => o.status === col.status);
+          return (
+            <section className="column" key={col.status}>
+              <h2>{col.title} ({list.length})</h2>
+              {list.length === 0 && <p className="hint">Nothing here</p>}
+              {list.map((o) => (
+                <div className="ticket" key={o.id}>
+                  <div className="ticket-head">
+                    <strong>Table {o.table.number}</strong>
+                    <span>#{o.id} - {new Date(o.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                  </div>
+                  <ul className="summary">
+                    {o.items.map((i) => (
+                      <li key={i.id}><span>{i.quantity} x {i.name}</span></li>
+                    ))}
+                  </ul>
+                  <button className="primary" onClick={() => advance(o, col.next)}>{col.label}</button>
+                </div>
+              ))}
+            </section>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
