@@ -42,11 +42,11 @@ export default function MenuPage() {
       ),
     [cart]
   );
-  const startPayment = async (orderId, phoneNumber) => {
+  const startPayment = async (token, phoneNumber) => {
     setPayStatus("starting");
     setPayMessage("");
     try {
-      const res = await fetch(`/api/orders/${orderId}/pay`, {
+      const res = await fetch(`/api/track/${token}/pay`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone: phoneNumber }),
@@ -111,7 +111,7 @@ export default function MenuPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not place order");
       setPlacedOrder(data);
-      startPayment(data.id, phone.trim());
+      startPayment(data.publicToken, phone.trim());
       setCart({});
       setShowCheckout(false);
     } catch (e) {
@@ -142,7 +142,7 @@ export default function MenuPage() {
         {payStatus === "failed" && (
           <>
             <p className="error">{payMessage}</p>
-            <button className="primary" onClick={() => startPayment(placedOrder.id, phone.trim())}>
+            <button className="primary" onClick={() => startPayment(placedOrder.publicToken, phone.trim())}>
               Try payment again
             </button>
           </>
@@ -159,20 +159,23 @@ export default function MenuPage() {
   if (error) return <p className="notice">{error}</p>;
   if (!menu) return <p className="notice">Loading menu...</p>;
   return (
-    <div className="page">
+    <div className="page menu-page">
       <header className="header">
         <h1>{menu.name}</h1>
         {table && <span className="table-badge">Table {table}</span>}
       </header>
-      {menu.categories.map((cat) => (
+      {menu.categories.filter((cat) => cat.items.length > 0).map((cat) => (
         <section key={cat.id}>
           <h2>{cat.name}</h2>
           {cat.items.map((item) => (
             <div className="item" key={item.id}>
               <div className="item-info">
-                <strong>{item.name}</strong>
+                <div className="item-head">
+                  <strong>{item.name}</strong>
+                  <span className="leader" />
+                  <span className="price">KES {item.price}</span>
+                </div>
                 {item.description && <p>{item.description}</p>}
-                <span className="price">KES {item.price}</span>
               </div>
               <div className="qty">
                 {cart[item.id] ? (

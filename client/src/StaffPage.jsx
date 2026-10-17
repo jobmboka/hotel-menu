@@ -7,29 +7,40 @@ const COLUMNS = [
 ];
 export default function StaffPage() {
   const { slug } = useParams();
-  const [key, setKey] = useState(() => {
-    try { return sessionStorage.getItem("staffKey") || ""; } catch { return ""; }
+  const [token, setToken] = useState(() => {
+    try { return sessionStorage.getItem("staffToken:" + slug) || ""; } catch { return ""; }
   });
-  const [input, setInput] = useState("");
+  const [password, setPassword] = useState("");
   const [orders, setOrders] = useState([]);
   const [error, setError] = useState("");
+  const [loggingIn, setLoggingIn] = useState(false);
+  const logout = useCallback(
+    (message) => {
+      try { sessionStorage.removeItem("staffToken:" + slug); } catch { /* ignore */ }
+      setToken("");
+      setOrders([]);
+      setError(message || "");
+    },
+    [slug]
+  );
   const load = useCallback(async () => {
-    if (!key) return;
+    if (!token) return;
     try {
-      const r = await fetch(`/api/staff/${slug}/orders`, { headers: { "x-staff-key": key } });
+      const r = await fetch(`/api/staff/${slug}/orders`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (r.status === 401) {
-        try { sessionStorage.removeItem("staffKey"); } catch { /* ignore */ }
-        setKey("");
-        setError("Wrong staff key");
+        logout("Session expired. Please log in again.");
         return;
       }
+      if (r.status === 404) throw new Error("Restaurant not found");
       if (!r.ok) throw new Error("Could not load orders");
       setOrders(await r.json());
       setError("");
     } catch (e) {
       setError(e.message);
     }
-  }, [key, slug]);
+  }, [token, slug, logout]);
   useEffect(() => {
     load();
     const t = setInterval(load, 5000);
@@ -39,9 +50,13 @@ export default function StaffPage() {
     try {
       const r = await fetch(`/api/staff/orders/${order.id}/status`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", "x-staff-key": key },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ status: next }),
       });
+      if (r.status === 401) {
+        logout("Session expired. Please log in again.");
+        return;
+      }
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
         setError(d.error || "Could not update order");
@@ -50,24 +65,45 @@ export default function StaffPage() {
       load();
     }
   };
-  const login = (e) => {
+  const login = async (e) => {
     e.preventDefault();
-    const k = input.trim();
-    if (!k) return;
-    try { sessionStorage.setItem("staffKey", k); } catch { /* ignore */ }
-    setKey(k);
-    setInput("");
+    if (!password) return;
+    setLoggingIn(true);
     setError("");
+    try {
+      const r = await fetch(`/api/staff/${slug}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Login failed");
+      try { sessionStorage.setItem("staffToken:" + slug, d.token); } catch { /* ignore */ }
+      setToken(d.token);
+      setPassword("");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoggingIn(false);
+    }
   };
-  if (!key) {
+  if (!token) {
     return (
       <div className="page">
         <h1>Staff login</h1>
         <form onSubmit={login}>
-          <label htmlFor="skey">Staff key</label>
-          <input id="skey" type="password" value={input} onChange={(e) => setInput(e.target.value)} />
+          <label htmlFor="spw">Password for {slug}</label>
+          <input
+            id="spw"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
           {error && <p className="error">{error}</p>}
-          <button className="primary" type="submit">Open dashboard</button>
+          <button className="primary" type="submit" disabled={loggingIn}>
+            {loggingIn ? "Logging in..." : "Log in"}
+          </button>
         </form>
       </div>
     );
@@ -77,7 +113,8 @@ export default function StaffPage() {
       <header className="header">
         <h1>Orders - {slug}</h1>
         <span className="hint">
-          <Link to={`/staff/${slug}/qr`}>Table QR codes</Link> - Refreshes every 5s
+          <Link to={`/admin/${slug}`}>Edit menu</Link> - <Link to={`/staff/${slug}/qr`}>Table QR codes</Link> - Refreshes every 5s -{" "}
+          <button className="mini" onClick={() => logout("")}>Log out</button>
         </span>
       </header>
       {error && <p className="error">{error}</p>}

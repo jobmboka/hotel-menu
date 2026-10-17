@@ -4,16 +4,16 @@ import { QRCodeSVG } from "qrcode.react";
 export default function QrPage() {
   const { slug } = useParams();
   const [key] = useState(() => {
-    try { return sessionStorage.getItem("staffKey") || ""; } catch { return ""; }
+    try { return sessionStorage.getItem("staffToken:" + slug) || ""; } catch { return ""; }
   });
   const [base, setBase] = useState(window.location.origin);
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   useEffect(() => {
     if (!key) return;
-    fetch(`/api/staff/${slug}/tables`, { headers: { "x-staff-key": key } })
+    fetch(`/api/staff/${slug}/tables`, { headers: { Authorization: `Bearer ${key}` } })
       .then((r) => {
-        if (r.status === 401) throw new Error("Staff key rejected. Log in again on the dashboard.");
+        if (r.status === 401) throw new Error("Session expired. Log in again on the dashboard.");
         if (!r.ok) throw new Error("Could not load tables");
         return r.json();
       })
